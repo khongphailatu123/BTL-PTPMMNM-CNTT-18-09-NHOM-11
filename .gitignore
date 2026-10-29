@@ -1,0 +1,12 @@
+# Local notes may contain account credentials.
+/ghichu.txt
+
+# Keep the local database export private; publish only the sanitized schema copy.
+/pocket_db2.sql
+
+# Local environment and editor files.
+/.env
+/.env.*
+!.env.example
+/.vscode/
+/.idea/
