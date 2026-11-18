@@ -23,12 +23,14 @@ if ($res->num_rows === 0) {
 }
 
 $article = $res->fetch_assoc();
+$stmt->close();
 ?>
 <!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
     <title><?php echo htmlspecialchars($article['title']); ?> - Chia sẻ từ Pocket Saver</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -38,14 +40,19 @@ $article = $res->fetch_assoc();
         body { background-color: #0b132b; color: #e2e8f0; min-height: 100vh; padding-bottom: 50px; }
         .share-container { max-width: 900px; margin: 30px auto; padding: 0 20px; }
         .share-header { background: #1c2541; border: 1px solid #334155; border-radius: 16px; padding: 24px; margin-bottom: 24px; }
-        .share-body { background: #1c2541; border: 1px solid #334155; border-radius: 16px; padding: 30px; }
+        .share-body { background: #1c2541; border: 1px solid #334155; border-radius: 16px; padding: 30px; overflow-x: hidden; }
         
         /* Ép hiển thị mượt mà cho cả Light Novel lẫn Truyện tranh */
-        #contentArea p, #contentArea span, #contentArea div {
+        #contentArea p, #contentArea span, #contentArea div, #contentArea font,
+        #contentArea h1, #contentArea h2, #contentArea h3, #contentArea h4 {
             color: #e2e8f0 !important;
             font-size: 1.05rem !important;
             line-height: 1.8 !important;
             background: transparent !important;
+        }
+        #contentArea * {
+            max-width: 100% !important;
+            box-sizing: border-box !important;
         }
         #contentArea img {
             max-width: 100% !important;
@@ -60,17 +67,23 @@ $article = $res->fetch_assoc();
 
 <div class="share-container">
     <div class="share-header d-flex justify-content-between align-items-center flex-wrap gap-3">
-        <div>
-            <div class="text-danger fw-bold fs-7 mb-1"><i class="fa-solid fa-bookmark me-1"></i> POCKET SAVER - BẢN CHIA SẺ</div>
-            <h4 class="fw-bold m-0 text-white"><?php echo htmlspecialchars($article['title']); ?></h4>
-            <small class="text-muted">Nguồn gốc: <a href="<?php echo htmlspecialchars($article['url']); ?>" target="_blank" class="text-info"><?php echo htmlspecialchars($article['url']); ?></a></small>
+        <div style="min-width: 0; flex: 1;">
+            <div class="text-danger fw-bold small mb-1">
+                <i class="fa-solid fa-bookmark me-1"></i> POCKET SAVER - BẢN CHIA SẺ (v<?php echo $version; ?>)
+            </div>
+            <h4 class="fw-bold mb-1 text-white"><?php echo htmlspecialchars($article['title']); ?></h4>
+            <small class="text-secondary d-block text-truncate">
+                Nguồn gốc: <a href="<?php echo htmlspecialchars($article['url']); ?>" target="_blank" rel="noopener noreferrer" class="text-info text-decoration-none"><?php echo htmlspecialchars($article['url']); ?></a>
+            </small>
         </div>
-        <a href="index.php" class="btn btn-outline-light btn-sm fw-semibold"><i class="fa-solid fa-house me-1"></i> Về trang chủ</a>
+        <a href="index.php" class="btn btn-outline-light btn-sm fw-semibold flex-shrink-0">
+            <i class="fa-solid fa-house me-1"></i> Về trang chủ
+        </a>
     </div>
 
     <div class="share-body">
         <div id="contentArea">
-            <?php echo $article['content']; ?>
+            <?php echo $article['content'] ?? '<p class="text-secondary">Không có nội dung cho phiên bản này.</p>'; ?>
         </div>
     </div>
 </div>

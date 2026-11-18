@@ -1,18 +1,35 @@
 <?php
-// index.php - Giao diện chính Pocket Saver v2 (Poster Card Full-viền ảnh, Đổi ảnh bìa, Trang Lọc riêng, Phân trang 3 chấm & Liên kết Library)
+// index.php - Giao diện chính Pocket Saver v2 (Đồng bộ Light/Dark Mode, Avatar + ID Tài khoản, Poster Card Full-viền ảnh)
 require_once 'config/db.php';
 
 if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
+    header("Location: auth/login.php");
     exit();
 }
 
-$current_user_id = $_SESSION['user_id'];
+$current_user_id = (int)$_SESSION['user_id'];
 $current_username = $_SESSION['username'];
 $current_role = $_SESSION['role'] ?? 'user';
+$myAccountCode = 100000 + $current_user_id;
+
+// Lấy ảnh đại diện (Avatar) hiện tại của người dùng nếu cột avatar đã tồn tại
+$headerAvatar = '';
+$chkAvtCol = $conn->query("SHOW COLUMNS FROM users LIKE 'avatar'");
+if ($chkAvtCol && $chkAvtCol->num_rows > 0) {
+    $stmtAvtHdr = $conn->prepare("SELECT avatar FROM users WHERE id = ? LIMIT 1");
+    if ($stmtAvtHdr) {
+        $stmtAvtHdr->bind_param("i", $current_user_id);
+        $stmtAvtHdr->execute();
+        $rowAvt = $stmtAvtHdr->get_result()->fetch_assoc();
+        if (!empty($rowAvt['avatar']) && file_exists($rowAvt['avatar'])) {
+            $headerAvatar = $rowAvt['avatar'] . '?v=' . filemtime($rowAvt['avatar']);
+        }
+        $stmtAvtHdr->close();
+    }
+}
 
 // 1. Lấy danh sách thông báo lời mời chia sẻ ĐANG CHỜ DUYỆT (pending)
-$sqlPending = "SELECT sh.id as share_id, a.title, u.username as sender_name, sh.shared_at 
+$sqlPending = "SELECT sh.id as share_id, a.title, u.username as sender_name, u.id as sender_id
                FROM article_shares sh 
                JOIN articles a ON sh.article_id = a.id 
                JOIN users u ON sh.sender_id = u.id 
@@ -45,7 +62,6 @@ if ($result && $result->num_rows > 0) {
         
         if (!isset($db_articles_temp[$articleId])) {
             $tagsArray = !empty($row['tags']) ? array_map('trim', explode(',', $row['tags'])) : ['Chưa phân loại'];
-            $notesArray = !empty($row['notes']) ? json_decode($row['notes'], true) : [];
 
             $thumbImage = '';
             // Ưu tiên ảnh bìa tùy chỉnh người dùng đã tải lên trong assets/covers/
@@ -131,10 +147,110 @@ $db_articles = array_values($db_articles_temp);
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
+    <!-- Áp dụng theme ngay trước khi render để tránh chớp màn hình -->
+    <script>
+        (function() {
+            const savedTheme = localStorage.getItem('pocket_theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+
     <style>
+        /* =========================================================
+           BỘ BIẾN MÀU ĐỒNG BỘ SÁNG / TỐI (LIGHT & DARK MODE)
+           ========================================================= */
+        :root,
+        [data-theme="light"] {
+            --bg-body: #f8fafc;
+            --bg-surface: #ffffff;
+            --bg-surface-2: #f1f5f9;
+            --bg-hover: #e2e8f0;
+            --bg-active-soft: #e6f4f1;
+            --border-color: #cbd5e1;
+            --border-subtle: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #64748b;
+            --accent-teal: #008080;
+            --accent-info: #0284c7;
+            --folder-grad: linear-gradient(145deg, #ffffff, #f8fafc);
+            --scrollbar-track: #e2e8f0;
+            --scrollbar-thumb: #94a3b8;
+            --shadow-card: 0 4px 15px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        [data-theme="dark"] {
+            --bg-body: #0f172a;
+            --bg-surface: #1e293b;
+            --bg-surface-2: #273449;
+            --bg-hover: #334155;
+            --bg-active-soft: rgba(20, 184, 166, 0.16);
+            --border-color: #334155;
+            --border-subtle: #1e293b;
+            --text-primary: #f8fafc;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --accent-teal: #14b8a6;
+            --accent-info: #38bdf8;
+            --folder-grad: linear-gradient(145deg, #1e293b, #0f172a);
+            --scrollbar-track: #1e293b;
+            --scrollbar-thumb: #475569;
+            --shadow-card: 0 6px 20px -2px rgba(0, 0, 0, 0.35);
+        }
+
+        * { font-family: 'Inter', sans-serif; }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-primary);
+            font-size: 0.93rem;
+            transition: background-color 0.25s ease, color 0.25s ease;
+        }
+
+        /* Đồng bộ toàn bộ Form Control, Select, Modal, Dropdown theo Theme */
+        .form-control,
+        .form-select {
+            background-color: var(--bg-surface-2) !important;
+            color: var(--text-primary) !important;
+            border-color: var(--border-color) !important;
+            transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+        }
+        .form-control:focus,
+        .form-select:focus {
+            background-color: var(--bg-surface) !important;
+            color: var(--text-primary) !important;
+            border-color: var(--accent-teal) !important;
+            box-shadow: 0 0 0 0.2rem rgba(20, 184, 166, 0.2) !important;
+        }
+        .form-control::placeholder,
+        textarea.form-control::placeholder {
+            color: var(--text-muted) !important;
+            opacity: 0.65 !important;
+        }
+
+        .modal-content,
+        .dropdown-menu,
+        .list-group-item {
+            background-color: var(--bg-surface) !important;
+            color: var(--text-primary) !important;
+            border-color: var(--border-color) !important;
+        }
+        .dropdown-item {
+            color: var(--text-primary) !important;
+        }
+        .dropdown-item:hover {
+            background-color: var(--bg-surface-2) !important;
+        }
+        [data-theme="dark"] .btn-close {
+            filter: invert(1) grayscale(100%) brightness(200%);
+        }
+
+        /* FOLDER / LIBRARY CARD */
         .folder-card {
-            background: linear-gradient(145deg, #ffffff, #f8fafc);
-            border: 1px solid #e2e8f0;
+            background: var(--folder-grad);
+            border: 1px solid var(--border-color);
             border-radius: 20px;
             padding: 24px;
             cursor: pointer;
@@ -143,11 +259,10 @@ $db_articles = array_values($db_articles_temp);
             flex-direction: column;
             justify-content: space-between;
             height: 185px;
-            box-shadow: 0 4px 15px -2px rgba(0, 0, 0, 0.04);
+            box-shadow: var(--shadow-card);
             position: relative;
             overflow: hidden;
         }
-
         .folder-card::before {
             content: '';
             position: absolute;
@@ -156,40 +271,51 @@ $db_articles = array_values($db_articles_temp);
             opacity: 0;
             transition: opacity 0.3s ease;
         }
-
         .folder-card:hover {
             transform: translateY(-6px);
-            box-shadow: 0 16px 30px -10px rgba(13, 148, 136, 0.15);
-            border-color: #99f6e4;
+            box-shadow: 0 16px 30px -10px rgba(13, 148, 136, 0.22);
+            border-color: var(--accent-teal);
         }
-
         .folder-card:hover::before { opacity: 1; }
+        .folder-title-text {
+            color: var(--text-primary);
+            font-size: 1.15rem;
+            letter-spacing: -0.2px;
+        }
+        .folder-sub-text {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+        }
 
         .folder-icon-box {
             width: 50px; height: 50px;
-            background: #fef3c7;
+            background: rgba(245, 158, 11, 0.16);
             border-radius: 14px;
             display: flex; align-items: center; justify-content: center;
-            font-size: 1.4rem; color: #d97706;
+            font-size: 1.4rem; color: #f59e0b;
             transition: all 0.3s ease;
         }
-
         .folder-card:hover .folder-icon-box {
             background: #0d9488; color: #ffffff;
             transform: scale(1.08) rotate(-4deg);
         }
 
         .folder-count-badge {
-            background: #0f172a; color: #ffffff;
+            background: var(--bg-surface-2);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
             font-weight: 600; font-size: 0.75rem;
             padding: 5px 12px; border-radius: 20px;
             transition: all 0.2s ease;
         }
-
-        .folder-card:hover .folder-count-badge { background: #0d9488; }
+        .folder-card:hover .folder-count-badge {
+            background: #0d9488;
+            color: #ffffff;
+            border-color: #0d9488;
+        }
 
         .folder-add-card {
-            border: 2px dashed #cbd5e1;
+            border: 2px dashed var(--border-color);
             border-radius: 20px;
             padding: 24px;
             cursor: pointer;
@@ -199,40 +325,88 @@ $db_articles = array_values($db_articles_temp);
             align-items: center;
             justify-content: center;
             gap: 10px;
-            color: #64748b;
-            background: rgba(248, 250, 252, 0.45);
+            color: var(--text-muted);
+            background: var(--bg-surface);
             transition: all 0.25s ease;
         }
         .folder-add-card:hover {
-            border-color: #0d9488;
-            color: #0d9488;
+            border-color: var(--accent-teal);
+            color: var(--accent-teal);
             transform: translateY(-4px);
-            background: rgba(13, 148, 136, 0.06);
+            background: var(--bg-active-soft);
         }
 
-        * { font-family: 'Inter', sans-serif; }
-        body { background-color: #ffffff; color: #1a1a1a; font-size: 0.93rem; }
-
-        /* Làm mờ chữ gợi ý (placeholder) bên trong các ô nhập liệu */
-        .form-control::placeholder,
-        textarea.form-control::placeholder {
-            color: #9ca3af !important;
-            opacity: 0.42 !important;
+        /* HEADER & NAVIGATION */
+        .pocket-header {
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border-color);
+            height: 60px;
+            padding: 0 28px;
+            transition: background-color 0.25s ease, border-color 0.25s ease;
         }
-
-        .pocket-header { background: #ffffff; border-bottom: 1px solid #e5e7eb; height: 60px; padding: 0 28px; }
         .pocket-logo { color: #ef4056; font-weight: 700; font-size: 1.3rem; text-decoration: none; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
-        .top-nav-link { color: #4b5563; font-weight: 600; text-decoration: none; padding: 18px 12px; border-bottom: 3px solid transparent; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
-        .top-nav-link.active { color: #000000; border-bottom-color: #008080; }
+        .top-nav-link {
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-decoration: none;
+            padding: 18px 12px;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .top-nav-link.active {
+            color: var(--text-primary);
+            border-bottom-color: var(--accent-teal);
+        }
 
-        .header-icon-btn { background: none; border: none; color: #374151; font-size: 1.1rem; padding: 8px; border-radius: 50%; position: relative; flex-shrink: 0; }
-        .header-icon-btn:hover { background: #f3f4f6; }
-        .header-icon-btn.active-btn { background: #e0f2fe; color: #0284c7 !important; }
+        .header-icon-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            padding: 8px;
+            border-radius: 50%;
+            position: relative;
+            flex-shrink: 0;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        .header-icon-btn:hover {
+            background: var(--bg-surface-2);
+            color: var(--text-primary);
+        }
+        .header-icon-btn.active-btn {
+            background: var(--bg-active-soft);
+            color: var(--accent-info) !important;
+        }
 
+        .user-dropdown-btn {
+            background-color: var(--bg-surface-2) !important;
+            color: var(--text-primary) !important;
+            border: 1px solid var(--border-color) !important;
+        }
+
+        /* SIDEBAR */
         .pocket-sidebar { width: 230px; flex-shrink: 0; padding: 12px 0 40px 0; }
-        .side-link { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 8px; color: #374151; font-weight: 500; text-decoration: none; margin-bottom: 2px; cursor: pointer; }
-        .side-link:hover, .side-link.active { background: #e6f4f1; color: #008080; font-weight: 600; }
+        .side-link {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-decoration: none;
+            margin-bottom: 2px;
+            cursor: pointer;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+        .side-link:hover, .side-link.active {
+            background: var(--bg-active-soft);
+            color: var(--accent-teal);
+            font-weight: 600;
+        }
 
         .sidebar-section-toggle {
             display: flex;
@@ -243,14 +417,14 @@ $db_articles = array_values($db_articles_temp);
             font-size: 0.74rem;
             font-weight: 700;
             text-transform: uppercase;
-            color: #6b7280;
+            color: var(--text-muted);
             cursor: pointer;
             user-select: none;
             transition: background-color 0.15s ease, color 0.15s ease;
         }
         .sidebar-section-toggle:hover {
-            background-color: #f3f4f6;
-            color: #111827;
+            background-color: var(--bg-surface-2);
+            color: var(--text-primary);
         }
         .sidebar-section-toggle .chevron-icon {
             transition: transform 0.2s ease;
@@ -260,20 +434,73 @@ $db_articles = array_values($db_articles_temp);
             transform: rotate(-90deg);
         }
 
-        /* Dropdown gợi ý Library liên kết trực tiếp trong modal New & Edit */
-        .library-combo-wrapper {
-            position: relative;
+        /* TRANG TÌM KIẾM & LỌC NÂNG CAO (ĐỒNG BỘ SÁNG / TỐI) */
+        .adv-filter-section {
+            background-color: var(--bg-body);
+            color: var(--text-primary);
+            min-height: calc(100vh - 60px);
+            transition: background-color 0.25s ease, color 0.25s ease;
         }
+        .adv-filter-divider {
+            border-color: var(--border-color) !important;
+        }
+        .adv-filter-title {
+            color: var(--text-primary);
+        }
+        .adv-filter-subtext {
+            color: var(--text-muted);
+        }
+        .adv-filter-box {
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            transition: background-color 0.25s ease, border-color 0.25s ease;
+        }
+        .adv-accent-text {
+            color: var(--accent-info);
+        }
+        .adv-tag-label {
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+        .adv-btn-ghost {
+            background-color: var(--bg-surface);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+        .adv-btn-ghost:hover {
+            background-color: var(--bg-surface-2);
+            color: var(--text-primary);
+            border-color: var(--accent-teal);
+        }
+
+        /* Custom Scrollbar đồng bộ Theme */
+        #advIncludeTagsContainer::-webkit-scrollbar,
+        #advExcludeTagsContainer::-webkit-scrollbar {
+            width: 7px;
+        }
+        #advIncludeTagsContainer::-webkit-scrollbar-track,
+        #advExcludeTagsContainer::-webkit-scrollbar-track {
+            background: var(--scrollbar-track);
+            border-radius: 6px;
+        }
+        #advIncludeTagsContainer::-webkit-scrollbar-thumb,
+        #advExcludeTagsContainer::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 6px;
+        }
+
+        /* Dropdown gợi ý Library liên kết trực tiếp trong modal New & Edit */
+        .library-combo-wrapper { position: relative; }
         .library-dropdown-menu {
             position: absolute;
             top: calc(100% + 4px);
             left: 0;
             right: 0;
             z-index: 1065;
-            background: #ffffff;
-            border: 1px solid #cbd5e1;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
             border-radius: 10px;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.18);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25);
             max-height: 190px;
             overflow-y: auto;
             display: none;
@@ -281,19 +508,17 @@ $db_articles = array_values($db_articles_temp);
         .library-dropdown-item {
             padding: 8px 12px;
             font-size: 0.88rem;
-            color: #1e293b;
+            color: var(--text-primary);
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 1px solid #f1f5f9;
+            border-bottom: 1px solid var(--border-subtle);
         }
-        .library-dropdown-item:last-child {
-            border-bottom: none;
-        }
+        .library-dropdown-item:last-child { border-bottom: none; }
         .library-dropdown-item:hover {
-            background: #e6f4f1;
-            color: #008080;
+            background: var(--bg-active-soft);
+            color: var(--accent-teal);
             font-weight: 600;
         }
 
@@ -301,7 +526,7 @@ $db_articles = array_values($db_articles_temp);
         .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 22px; }
         .pocket-card {
             background: #0f172a;
-            border: 1px solid #e5e7eb;
+            border: 1px solid var(--border-color);
             border-radius: 14px;
             overflow: hidden;
             cursor: pointer;
@@ -312,7 +537,7 @@ $db_articles = array_values($db_articles_temp);
         }
         .pocket-card:hover {
             transform: translateY(-4px);
-            box-shadow: 0 14px 24px -6px rgba(0, 0, 0, 0.22);
+            box-shadow: 0 14px 24px -6px rgba(0, 0, 0, 0.28);
         }
         .poster-full-img {
             width: 100%;
@@ -321,9 +546,7 @@ $db_articles = array_values($db_articles_temp);
             display: block;
             transition: transform 0.35s ease;
         }
-        .pocket-card:hover .poster-full-img {
-            transform: scale(1.04);
-        }
+        .pocket-card:hover .poster-full-img { transform: scale(1.04); }
         .poster-title-overlay {
             position: absolute;
             left: 0;
@@ -380,16 +603,31 @@ $db_articles = array_values($db_articles_temp);
             transform: scale(1.06);
         }
 
-        /* Ô nhập số trang khi bấm vào dấu ... trên thanh phân trang */
+        /* Phân trang đồng bộ Theme */
+        .pagination .page-link {
+            background-color: var(--bg-surface);
+            color: var(--text-primary);
+            border-color: var(--border-color);
+        }
+        .pagination .page-link:hover {
+            background-color: var(--bg-surface-2);
+            color: var(--accent-teal);
+        }
+        .pagination .page-item.disabled .page-link {
+            background-color: var(--bg-surface-2);
+            color: var(--text-muted);
+            opacity: 0.6;
+        }
+
         .page-ellipsis-input {
             width: 58px;
             height: 100%;
-            border: 1px solid #008080;
+            border: 1px solid var(--accent-teal);
             text-align: center;
             font-weight: 700;
             font-size: 0.9rem;
-            color: #0f172a;
-            background: #ffffff;
+            color: var(--text-primary);
+            background: var(--bg-surface);
             outline: none;
             padding: 6px 4px;
             -moz-appearance: textfield;
@@ -400,11 +638,29 @@ $db_articles = array_values($db_articles_temp);
             margin: 0;
         }
 
-        .tag-badge { background-color: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; display: inline-flex; align-items: center; gap: 4px; }
+        .tag-badge {
+            background-color: var(--bg-surface-2);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .theme-box-subtle {
+            background-color: var(--bg-surface-2) !important;
+            color: var(--text-primary) !important;
+            border: 1px solid var(--border-color) !important;
+        }
 
         #searchBox {
             will-change: height;
             transform: translateZ(0);
+            background-color: var(--bg-surface) !important;
+            border-color: var(--border-color) !important;
         }
         
         #modalBody {
@@ -473,7 +729,7 @@ $db_articles = array_values($db_articles_temp);
             <?php elseif ($_SESSION['share_msg'] === 'error_self'): ?>
                 Swal.fire({ icon: 'warning', title: 'Không thể thực hiện', text: 'Bạn không thể tự chia sẻ bài viết cho chính mình!', confirmButtonColor: '#008080', customClass: { popup: 'rounded-4' } });
             <?php elseif ($_SESSION['share_msg'] === 'error_not_found'): ?>
-                Swal.fire({ icon: 'error', title: 'Lỗi', text: 'Tài khoản người nhận không tồn tại!', confirmButtonColor: '#dc3545', customClass: { popup: 'rounded-4' } });
+                Swal.fire({ icon: 'error', title: 'Lỗi', text: 'ID hoặc Username người nhận không tồn tại!', confirmButtonColor: '#dc3545', customClass: { popup: 'rounded-4' } });
             <?php endif; ?>
         </script>
         <?php unset($_SESSION['share_msg']); ?>
@@ -490,6 +746,11 @@ $db_articles = array_values($db_articles_temp);
         </div>
 
         <div class="d-flex align-items-center gap-2">
+            <!-- NÚT CHUYỂN CHẾ ĐỘ SÁNG / TỐI -->
+            <button id="themeToggleBtn" class="header-icon-btn" title="Chuyển chế độ Sáng / Tối" onclick="toggleColorTheme()">
+                <i id="themeToggleIcon" class="fa-solid fa-moon"></i>
+            </button>
+
             <!-- NÚT THÔNG BÁO QUẢ CHUÔNG 🔔 -->
             <button class="header-icon-btn me-1" title="Thông báo chia sẻ" data-bs-toggle="modal" data-bs-target="#notificationModal">
                 <i class="fa-solid fa-bell fs-5"></i>
@@ -511,43 +772,54 @@ $db_articles = array_values($db_articles_temp);
             </button>
             
             <div class="dropdown ms-2">
-                <button class="btn btn-light border rounded-pill fw-semibold dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown">
-                    <div class="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center fw-bold" style="width: 30px; height: 30px; font-size: 0.8rem;">
-                        <?php echo strtoupper(substr($current_username, 0, 1)); ?>
-                    </div>
-                    <?php echo htmlspecialchars($current_username); ?>
+                <button class="btn user-dropdown-btn rounded-pill fw-semibold dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown">
+                    <?php if ($headerAvatar !== ''): ?>
+                        <img src="<?php echo htmlspecialchars($headerAvatar); ?>" alt="Avatar" class="rounded-circle object-fit-cover" style="width: 30px; height: 30px;">
+                    <?php else: ?>
+                        <div class="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center fw-bold" style="width: 30px; height: 30px; font-size: 0.8rem;">
+                            <?php echo strtoupper(substr($current_username, 0, 1)); ?>
+                        </div>
+                    <?php endif; ?>
+                    <span><?php echo htmlspecialchars($current_username); ?></span>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    <li class="px-3 py-1 small fw-semibold" style="color: var(--text-muted); cursor: pointer;" onclick="copyMyAccountId('<?php echo $myAccountCode; ?>')" title="Bấm để sao chép ID">
+                        ID tài khoản: <span class="text-primary fw-bold">#<?php echo $myAccountCode; ?></span>
+                        <i class="fa-regular fa-copy ms-1"></i>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item fw-semibold" href="settings.php"><i class="fa-solid fa-gear me-2 text-secondary"></i>Cài đặt tài khoản</a></li>
+                    <li><hr class="dropdown-divider"></li>
                     <?php if ($current_role === 'admin'): ?>
                         <li><a class="dropdown-item text-primary fw-bold" href="admin.php"><i class="fa-solid fa-user-gear me-2"></i>Trang quản trị (Admin)</a></li>
                         <li><hr class="dropdown-divider"></li>
                     <?php endif; ?>
-                    <li><a class="dropdown-item text-danger fw-bold" href="logout.php"><i class="fa-solid fa-right-from-bracket me-2"></i>Đăng xuất</a></li>
+                    <li><a class="dropdown-item text-danger fw-bold" href="auth/logout.php"><i class="fa-solid fa-right-from-bracket me-2"></i>Đăng xuất</a></li>
                 </ul>
             </div>
         </div>
     </header>
 
     <!-- THANH TÌM KIẾM NHANH -->
-    <div class="collapse bg-light border-bottom p-3" id="searchBox">
+    <div class="collapse border-bottom p-3" id="searchBox">
         <div class="container" style="max-width: 650px;">
             <div class="input-group shadow-sm">
-                <span class="input-group-text bg-white border-end-0"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+                <span class="input-group-text theme-box-subtle border-end-0"><i class="fa-solid fa-magnifying-glass"></i></span>
                 <input type="text" id="searchInput" class="form-control border-start-0 ps-0" placeholder="Gõ từ khóa tìm kiếm (tiêu đề, nhãn, nội dung bài viết)..." onkeyup="handleSearch()">
                 <button class="btn btn-dark fw-bold px-4" onclick="handleSearch()">Tìm kiếm</button>
             </div>
         </div>
     </div>
 
-    <!-- TRANG TÌM KIẾM & LỌC NÂNG CAO (HIỂN THỊ RIÊNG BIỆT) -->
-    <section id="advancedFilterPage" style="display: none; background-color: #0f172a; color: #e2e8f0; min-height: calc(100vh - 60px);">
+    <!-- TRANG TÌM KIẾM & LỌC NÂNG CAO (TỰ ĐỘNG ĐỒNG BỘ SÁNG / TỐI) -->
+    <section id="advancedFilterPage" class="adv-filter-section" style="display: none;">
         <div class="container py-4 py-md-5" style="max-width: 1050px;">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 pb-3 border-bottom border-secondary">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 pb-3 border-bottom adv-filter-divider">
                 <div>
-                    <h4 class="fw-bold m-0 text-white"><i class="fa-solid fa-filter text-info me-2"></i>Tìm kiếm & Lọc nâng cao</h4>
-                    <small class="text-secondary">Chọn các điều kiện bên dưới rồi bấm "Áp dụng bộ lọc" để xem danh sách kết quả</small>
+                    <h4 class="fw-bold m-0 adv-filter-title"><i class="fa-solid fa-filter adv-accent-text me-2"></i>Tìm kiếm & Lọc nâng cao</h4>
+                    <small class="adv-filter-subtext">Chọn các điều kiện bên dưới rồi bấm "Áp dụng bộ lọc" để xem danh sách kết quả</small>
                 </div>
-                <button type="button" class="btn btn-outline-light btn-sm px-3" onclick="closeAdvancedFilterPage()">
+                <button type="button" class="btn adv-btn-ghost btn-sm px-3" onclick="closeAdvancedFilterPage()">
                     <i class="fa-solid fa-arrow-left me-1"></i> Quay lại danh sách
                 </button>
             </div>
@@ -555,18 +827,18 @@ $db_articles = array_values($db_articles_temp);
             <!-- Từ khóa, Library & Trạng thái -->
             <div class="row g-3 mb-4">
                 <div class="col-md-6">
-                    <label class="form-label small text-secondary fw-semibold">Từ khóa tìm kiếm</label>
-                    <input type="text" id="advKeyword" class="form-control bg-dark text-white border-secondary" placeholder="Nhập tiêu đề, URL hoặc nội dung bài viết...">
+                    <label class="form-label small adv-filter-subtext fw-semibold">Từ khóa tìm kiếm</label>
+                    <input type="text" id="advKeyword" class="form-control" placeholder="Nhập tiêu đề, URL hoặc nội dung bài viết...">
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label small text-secondary fw-semibold">Library</label>
-                    <select id="advCollection" class="form-select bg-dark text-white border-secondary">
+                    <label class="form-label small adv-filter-subtext fw-semibold">Library</label>
+                    <select id="advCollection" class="form-select">
                         <option value="">-- Tất cả Library --</option>
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label small text-secondary fw-semibold">Trạng thái HTTP</label>
-                    <select id="advStatus" class="form-select bg-dark text-white border-secondary">
+                    <label class="form-label small adv-filter-subtext fw-semibold">Trạng thái HTTP</label>
+                    <select id="advStatus" class="form-select">
                         <option value="">-- Tất cả Trạng thái --</option>
                         <option value="200">HTTP 200 (Hoạt động tốt)</option>
                         <option value="404">HTTP 404 (Trang lỗi)</option>
@@ -575,13 +847,13 @@ $db_articles = array_values($db_articles_temp);
             </div>
 
             <!-- Nhãn bao gồm (Multi-Tag A-Z) -->
-            <div class="p-3 p-md-4 rounded-3 border border-secondary mb-4" style="background-color: #1e293b;">
+            <div class="p-3 p-md-4 rounded-3 mb-4 adv-filter-box">
                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                     <div>
-                        <span class="fw-bold text-info"><i class="fa-solid fa-tags me-1"></i> Nhãn bao gồm (Chọn nhiều nhãn cùng thỏa mãn):</span>
-                        <small class="text-secondary d-block">Gõ chữ cái để lọc nhanh nhãn trong danh sách bên dưới</small>
+                        <span class="fw-bold adv-accent-text"><i class="fa-solid fa-tags me-1"></i> Nhãn bao gồm (Chọn nhiều nhãn cùng thỏa mãn):</span>
+                        <small class="adv-filter-subtext d-block">Gõ chữ cái để lọc nhanh nhãn trong danh sách bên dưới</small>
                     </div>
-                    <input type="text" id="tagQuickSearch" class="form-control form-control-sm bg-dark text-white border-secondary" style="width: 240px;" placeholder="Gõ tên nhãn để tìm nhanh..." onkeyup="filterTagCheckboxes()">
+                    <input type="text" id="tagQuickSearch" class="form-control form-control-sm" style="width: 240px;" placeholder="Gõ tên nhãn để tìm nhanh..." onkeyup="filterTagCheckboxes()">
                 </div>
                 
                 <div id="advIncludeTagsContainer" class="mt-3" style="max-height: 280px; overflow-y: auto; padding-right: 8px;"></div>
@@ -593,13 +865,13 @@ $db_articles = array_values($db_articles_temp);
                     <i class="fa-solid fa-ban me-1"></i> Nhãn loại trừ (Ẩn bài có chứa nhãn này)
                 </button>
                 <div class="collapse mt-2" id="excludeTagsCollapse">
-                    <div id="advExcludeTagsContainer" class="p-3 rounded-3 border border-danger border-opacity-50 d-flex flex-wrap gap-3" style="background-color: #1e293b; max-height: 160px; overflow-y: auto;"></div>
+                    <div id="advExcludeTagsContainer" class="p-3 rounded-3 border border-danger border-opacity-50 d-flex flex-wrap gap-3 adv-filter-box" style="max-height: 160px; overflow-y: auto;"></div>
                 </div>
             </div>
 
             <!-- Nút điều khiển -->
-            <div class="d-flex justify-content-between align-items-center pt-3 border-top border-secondary">
-                <button type="button" class="btn btn-outline-light px-3" onclick="resetAdvancedFilter()">
+            <div class="d-flex justify-content-between align-items-center pt-3 border-top adv-filter-divider">
+                <button type="button" class="btn adv-btn-ghost px-3" onclick="resetAdvancedFilter()">
                     <i class="fa-solid fa-rotate-left me-1"></i> Đặt lại bộ lọc
                 </button>
                 <button type="button" class="btn fw-bold px-5 py-2 text-white" style="background: linear-gradient(90deg, #8b5cf6, #ec4899);" onclick="applyAdvancedFilter()">
@@ -617,14 +889,14 @@ $db_articles = array_values($db_articles_temp);
             <aside class="pocket-sidebar">
                 <!-- Cụm FILTERS & TAGS mặc định thu gọn, bấm vào mới xổ ra -->
                 <div id="tagsSectionHeader" class="sidebar-section-toggle collapsed mb-1" onclick="toggleSidebarTagsSection()" title="Bấm để ẩn/hiện danh sách nhãn">
-                    <span><i class="fa-solid fa-tags me-1 text-secondary"></i> FILTERS & TAGS <span id="totalTagsBadge" class="text-muted fw-normal"></span></span>
+                    <span><i class="fa-solid fa-tags me-1"></i> FILTERS & TAGS <span id="totalTagsBadge" class="fw-normal"></span></span>
                     <i class="fa-solid fa-chevron-down chevron-icon"></i>
                 </div>
                 <div id="sidebarTagsWrapper" class="mb-3" style="display: none;">
                     <div id="sidebarTagsList"></div>
                 </div>
                 
-                <div class="text-uppercase text-muted fw-bold extra-small px-3 mt-3 mb-2" style="font-size: 0.72rem;">TRẠNG THÁI HỆ THỐNG</div>
+                <div class="text-uppercase fw-bold extra-small px-3 mt-3 mb-2" style="font-size: 0.72rem; color: var(--text-muted);">TRẠNG THÁI HỆ THỐNG</div>
                 <div id="linkErrorPages" class="side-link text-danger" onclick="filterCategory('error')">
                     <i class="fa-solid fa-triangle-exclamation"></i> Trang lỗi / 404 <span id="errorBadge" class="badge bg-danger ms-auto">0</span>
                 </div>
@@ -634,7 +906,7 @@ $db_articles = array_values($db_articles_temp);
             <main id="resultsMainArea" class="flex-grow-1">
                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
                     <div class="d-flex align-items-center gap-2">
-                        <button id="backToLibraryBtn" type="button" class="btn btn-sm btn-outline-secondary" style="display: none;" onclick="switchMainTab('collections')" title="Quay lại tất cả Library">
+                        <button id="backToLibraryBtn" type="button" class="btn btn-sm adv-btn-ghost" style="display: none;" onclick="switchMainTab('collections')" title="Quay lại tất cả Library">
                             <i class="fa-solid fa-arrow-left"></i>
                         </button>
                         <h5 id="viewTitle" class="fw-bold m-0">Tất cả bài viết đã lưu</h5>
@@ -643,7 +915,7 @@ $db_articles = array_values($db_articles_temp);
                         <button id="addInCurrentLibraryBtn" type="button" class="btn btn-sm btn-success fw-semibold" style="display: none;" onclick="openNewModal(activeLibraryFolder)">
                             <i class="fa-solid fa-plus me-1"></i> Thêm vào Library này
                         </button>
-                        <span id="itemCount" class="text-muted fs-7">0 bài viết</span>
+                        <span id="itemCount" class="fs-7" style="color: var(--text-muted);">0 bài viết</span>
                     </div>
                 </div>
                 <div id="cardGrid" class="card-grid"></div>
@@ -668,9 +940,9 @@ $db_articles = array_values($db_articles_temp);
                             <?php foreach ($pendingShares as $item): ?>
                                 <div class="list-group-item d-flex justify-content-between align-items-center p-3 mb-2 rounded border">
                                     <div>
-                                        <div class="fw-bold text-dark mb-1"><?php echo htmlspecialchars($item['title']); ?></div>
-                                        <small class="text-muted">
-                                            Gửi bởi: <strong class="text-primary"><?php echo htmlspecialchars($item['sender_name']); ?></strong>
+                                        <div class="fw-bold mb-1"><?php echo htmlspecialchars($item['title']); ?></div>
+                                        <small style="color: var(--text-muted);">
+                                            Gửi bởi: <strong class="text-primary"><?php echo htmlspecialchars($item['sender_name']); ?></strong> (ID: #<?php echo 100000 + (int)$item['sender_id']; ?>)
                                         </small>
                                     </div>
                                     <div class="d-flex gap-1 ms-2">
@@ -694,7 +966,7 @@ $db_articles = array_values($db_articles_temp);
                             <?php endforeach; ?>
                         </div>
                     <?php else: ?>
-                        <div class="text-center py-4 text-muted">
+                        <div class="text-center py-4" style="color: var(--text-muted);">
                             <i class="fa-regular fa-bell-slash fs-2 mb-2 d-block"></i>
                             Bạn không có lời mời chia sẻ nào mới.
                         </div>
@@ -716,7 +988,7 @@ $db_articles = array_values($db_articles_temp);
                             <span id="modalSharedBadge" class="badge bg-primary-subtle text-primary border border-primary-subtle" style="display: none;"></span>
                         </div>
                         <h4 id="modalTitle" class="fw-bold mb-1"></h4>
-                        <div class="text-muted small">
+                        <div class="small" style="color: var(--text-muted);">
                             <i class="fa-solid fa-link me-1"></i>
                             <a id="modalSourceLink" href="#" target="_blank" rel="noopener noreferrer" class="text-decoration-none text-primary fw-medium"></a>
                         </div>
@@ -726,13 +998,13 @@ $db_articles = array_values($db_articles_temp);
 
                 <div class="modal-body">
                     <div class="row g-4">
-                        <div class="col-md-8 border-end pe-4">
-                            <div class="d-flex align-items-center gap-2 mb-3 p-2 bg-light rounded text-dark">
-                                <span class="fw-semibold fs-7"><i class="fa-solid fa-tags text-secondary"></i> Nhãn:</span>
+                        <div class="col-md-8 border-end adv-filter-divider pe-4">
+                            <div class="d-flex align-items-center gap-2 mb-3 p-2 rounded theme-box-subtle">
+                                <span class="fw-semibold fs-7"><i class="fa-solid fa-tags"></i> Nhãn:</span>
                                 <div id="modalTagsContainer" class="d-flex flex-wrap gap-1"></div>
                             </div>
 
-                            <div class="d-flex align-items-center justify-content-between mb-3 p-2 bg-light rounded text-dark">
+                            <div class="d-flex align-items-center justify-content-between mb-3 p-2 rounded theme-box-subtle">
                                 <div id="versionButtonsContainer" class="d-flex align-items-center gap-1 flex-wrap">
                                     <span class="fw-semibold fs-7 me-2">Lịch sử Phiên bản:</span>
                                 </div>
@@ -756,14 +1028,14 @@ $db_articles = array_values($db_articles_temp);
                                 <button type="submit" class="btn btn-warning btn-sm w-100 fw-bold mb-4">Thêm ghi chú</button>
                             </form>
 
-                            <hr>
+                            <hr class="adv-filter-divider">
 
-                            <!-- Form chia sẻ bài viết cho User khác trong hệ thống -->
+                            <!-- Form chia sẻ bài viết bằng ID tài khoản (#100002) hoặc Username -->
                             <form action="actions/share_internal.php" method="POST" class="mb-3">
                                 <input type="hidden" id="sharePageId" name="article_id" value="">
-                                <label class="form-label fs-7 fw-bold text-dark"><i class="fa-solid fa-user-plus text-primary me-1"></i>Gửi bài cho tài khoản khác:</label>
+                                <label class="form-label fs-7 fw-bold"><i class="fa-solid fa-user-plus text-primary me-1"></i>Gửi bài cho tài khoản khác:</label>
                                 <div class="input-group">
-                                    <input type="text" name="receiver_username" class="form-control form-control-sm" placeholder="Nhập username người nhận..." required>
+                                    <input type="text" name="receiver_username" class="form-control form-control-sm" placeholder="Nhập ID (#100002) hoặc username..." required>
                                     <button type="submit" class="btn btn-primary btn-sm fw-bold">Gửi</button>
                                 </div>
                             </form>
@@ -773,7 +1045,7 @@ $db_articles = array_values($db_articles_temp);
                                 <i class="fa-solid fa-share-nodes me-1"></i> Sao chép link chia sẻ
                             </button>
 
-                            <button class="btn btn-outline-dark btn-sm w-100 fw-semibold" onclick="exportArticle()">
+                            <button class="btn adv-btn-ghost btn-sm w-100 fw-semibold" onclick="exportArticle()">
                                 <i class="fa-solid fa-file-export me-1"></i> Xuất bài viết (HTML)
                             </button>
                         </div>
@@ -799,14 +1071,14 @@ $db_articles = array_values($db_articles_temp);
                         
                         <label class="form-label fw-semibold fs-7 d-flex justify-content-between align-items-center">
                             <span>Library</span>
-                            <small class="text-muted" style="font-size:0.75rem;">(Chọn từ thư viện hoặc nhập tên mới)</small>
+                            <small style="font-size:0.75rem; color: var(--text-muted);">(Chọn từ thư viện hoặc nhập tên mới)</small>
                         </label>
                         <div class="library-combo-wrapper mb-3">
                             <div class="input-group">
                                 <input type="text" name="collection_name" id="newCollectionInput" class="form-control" autocomplete="off" placeholder="Chọn hoặc nhập tên Library..."
                                     onfocus="showLibraryDropdown('newCollectionInput', 'newLibraryDropdown')"
                                     oninput="filterLibraryDropdown('newCollectionInput', 'newLibraryDropdown')">
-                                <button type="button" class="btn btn-outline-secondary" title="Hiện danh sách Library" onclick="toggleLibraryDropdown('newCollectionInput', 'newLibraryDropdown')">
+                                <button type="button" class="btn adv-btn-ghost" title="Hiện danh sách Library" onclick="toggleLibraryDropdown('newCollectionInput', 'newLibraryDropdown')">
                                     <i class="fa-solid fa-chevron-down"></i>
                                 </button>
                             </div>
@@ -815,7 +1087,7 @@ $db_articles = array_values($db_articles_temp);
 
                         <label class="form-label fw-semibold fs-7 d-flex justify-content-between align-items-center">
                             <span>Nhãn (Tags)</span>
-                            <small class="text-muted" style="font-size:0.75rem;">(Nhiều nhãn cách nhau bởi dấu phẩy)</small>
+                            <small style="font-size:0.75rem; color: var(--text-muted);">(Nhiều nhãn cách nhau bởi dấu phẩy)</small>
                         </label>
                         <input type="text" name="tags" id="newTagsInput" class="form-control mb-3" placeholder="VD: Novel, Isekai, Action...">
 
@@ -839,13 +1111,13 @@ $db_articles = array_values($db_articles_temp);
                     <input type="hidden" id="editPageId" name="page_id" value="">
                     <div class="modal-body">
                         <!-- Xem trước & Chọn ảnh bìa mới -->
-                        <div class="mb-3 p-2 bg-light border rounded-3">
+                        <div class="mb-3 p-2 theme-box-subtle rounded-3">
                             <label class="form-label fw-semibold fs-7 mb-1"><i class="fa-regular fa-image text-primary me-1"></i>Ảnh bìa hiển thị (Giữ nguyên tên bài viết)</label>
                             <div class="d-flex align-items-center gap-3 mt-1">
-                                <img id="editCoverPreview" src="" alt="Preview" style="width: 68px; height: 86px; object-fit: cover; border-radius: 8px; border: 1px solid #cbd5e1; display: none;">
+                                <img id="editCoverPreview" src="" alt="Preview" style="width: 68px; height: 86px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border-color); display: none;">
                                 <div class="flex-grow-1">
                                     <input type="file" name="custom_cover" id="editCoverInput" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp,image/gif" onchange="previewEditCover(this)">
-                                    <small class="text-muted d-block mt-1" style="font-size: 0.74rem;">Chọn ảnh từ máy để thay thế banner quảng cáo nếu có.</small>
+                                    <small class="d-block mt-1" style="font-size: 0.74rem; color: var(--text-muted);">Chọn ảnh từ máy để thay thế banner quảng cáo nếu có.</small>
                                 </div>
                             </div>
                         </div>
@@ -862,7 +1134,7 @@ $db_articles = array_values($db_articles_temp);
                                 <input type="text" id="editCollectionInput" name="collection_name" class="form-control" autocomplete="off" placeholder="Chọn hoặc nhập tên Library..."
                                     onfocus="showLibraryDropdown('editCollectionInput', 'editLibraryDropdown')"
                                     oninput="filterLibraryDropdown('editCollectionInput', 'editLibraryDropdown')">
-                                <button type="button" class="btn btn-outline-secondary" title="Hiện danh sách Library" onclick="toggleLibraryDropdown('editCollectionInput', 'editLibraryDropdown')">
+                                <button type="button" class="btn adv-btn-ghost" title="Hiện danh sách Library" onclick="toggleLibraryDropdown('editCollectionInput', 'editLibraryDropdown')">
                                     <i class="fa-solid fa-chevron-down"></i>
                                 </button>
                             </div>
@@ -871,7 +1143,7 @@ $db_articles = array_values($db_articles_temp);
                         
                         <label class="form-label fw-semibold fs-7 d-flex justify-content-between align-items-center">
                             <span>Nhãn (Tags)</span>
-                            <small class="text-muted" style="font-size:0.75rem;">(Nhiều nhãn cách nhau bởi dấu phẩy)</small>
+                            <small style="font-size:0.75rem; color: var(--text-muted);">(Nhiều nhãn cách nhau bởi dấu phẩy)</small>
                         </label>
                         <input type="text" id="editTagInput" name="tags" class="form-control mb-3" placeholder="VD: Báo, Thể thao, Thế giới...">
 
@@ -896,14 +1168,59 @@ $db_articles = array_values($db_articles_temp);
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
+        function copyMyAccountId(code) {
+            navigator.clipboard.writeText(code).then(() => {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Đã sao chép ID!',
+                    text: 'Mã ID tài khoản của bạn là #' + code,
+                    timer: 1500,
+                    showConfirmButton: false,
+                    customClass: { popup: 'rounded-4' }
+                });
+            });
+        }
+
+        // Quản lý chuyển đổi Sáng / Tối (Light / Dark Mode)
+        function updateThemeToggleIcon(theme) {
+            const icon = document.getElementById('themeToggleIcon');
+            if (!icon) return;
+            if (theme === 'dark') {
+                icon.className = 'fa-solid fa-sun text-warning';
+            } else {
+                icon.className = 'fa-solid fa-moon';
+            }
+        }
+
+        function toggleColorTheme() {
+            const current = document.documentElement.getAttribute('data-theme') || 'light';
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            try {
+                localStorage.setItem('pocket_theme', next);
+            } catch (e) {}
+            updateThemeToggleIcon(next);
+        }
+
+        updateThemeToggleIcon(document.documentElement.getAttribute('data-theme') || 'light');
+
+        if (window.matchMedia) {
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+                if (!localStorage.getItem('pocket_theme')) {
+                    const sysTheme = e.matches ? 'dark' : 'light';
+                    document.documentElement.setAttribute('data-theme', sysTheme);
+                    updateThemeToggleIcon(sysTheme);
+                }
+            });
+        }
+
         let database = <?php echo json_encode($db_articles, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?> || [];
         let activePageId = null;
         let activeVersion = 1;
         let isAdvFilterInitialized = false;
         let showAllSidebarTags = false;
 
-        // Trạng thái điều hướng Library
-        let currentMainMode = 'saves'; // 'saves' | 'library-root' | 'library-folder'
+        let currentMainMode = 'saves';
         let activeLibraryFolder = null;
         const customLibrariesStorageKey = 'pocket_custom_libraries_<?php echo (int)$current_user_id; ?>';
 
@@ -920,7 +1237,6 @@ $db_articles = array_values($db_articles_temp);
             return str ? str.toString().replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
         }
 
-        // Quản lý danh sách Library thực tế (kết hợp bài viết trong MySQL + thư mục trống vừa tạo)
         function getSavedCustomLibraries() {
             try {
                 const raw = localStorage.getItem(customLibrariesStorageKey);
@@ -946,7 +1262,6 @@ $db_articles = array_values($db_articles_temp);
         function getAllLibrariesWithCounts() {
             const libMap = new Map();
 
-            // 1. Lấy tất cả Library hiện có từ database
             database.forEach(item => {
                 const name = (item.collection_name || 'Chung').trim() || 'Chung';
                 const key = name.toLowerCase();
@@ -957,7 +1272,6 @@ $db_articles = array_values($db_articles_temp);
                 }
             });
 
-            // 2. Bổ sung các Library trống mới tạo (0 bài viết)
             getSavedCustomLibraries().forEach(name => {
                 const clean = (name || '').trim();
                 if (!clean) return;
@@ -984,7 +1298,7 @@ $db_articles = array_values($db_articles_temp);
                     html += `
                         <div class="library-dropdown-item" onmousedown="selectLibraryOption('${inputId}', '${dropdownId}', '${escapeAttr(lib.name)}')">
                             <span><i class="fa-solid fa-folder text-warning me-2"></i>${escapeHTML(lib.name)}</span>
-                            <span class="badge bg-light text-secondary border">${lib.count} bài</span>
+                            <span class="badge theme-box-subtle">${lib.count} bài</span>
                         </div>
                     `;
                 });
@@ -1001,7 +1315,7 @@ $db_articles = array_values($db_articles_temp);
             }
 
             if (!html) {
-                html = `<div class="p-2 text-muted small text-center">Chưa có Library nào — gõ tên để tạo mới</div>`;
+                html = `<div class="p-2 small text-center" style="color: var(--text-muted);">Chưa có Library nào — gõ tên để tạo mới</div>`;
             }
 
             dropdown.innerHTML = html;
@@ -1040,14 +1354,12 @@ $db_articles = array_values($db_articles_temp);
             if (dropdown) dropdown.style.display = 'none';
         }
 
-        // Đóng dropdown Library khi nhấp ra ngoài
         document.addEventListener('click', function(e) {
             if (!e.target.closest('.library-combo-wrapper')) {
                 document.querySelectorAll('.library-dropdown-menu').forEach(el => el.style.display = 'none');
             }
         });
 
-        // Cập nhật giao diện thanh công cụ theo ngữ cảnh (Saves / Library gốc / Trong 1 folder Library)
         function updateContextToolbar() {
             const plusBtn = document.getElementById('headerPlusBtn');
             const backBtn = document.getElementById('backToLibraryBtn');
@@ -1071,7 +1383,6 @@ $db_articles = array_values($db_articles_temp);
             }
         }
 
-        // Bấm dấu + trên Header: ở trang tổng Library thì tạo folder mới; ở trang khác thì mở modal New
         function handleHeaderPlusClick() {
             if (currentMainMode === 'library-root') {
                 promptCreateLibrary();
@@ -1133,7 +1444,6 @@ $db_articles = array_values($db_articles_temp);
             });
         }
 
-        // Mở / Đóng trang Tìm kiếm & Lọc nâng cao riêng biệt
         function toggleAdvancedFilterPage() {
             const filterPage = document.getElementById('advancedFilterPage');
             if (!filterPage) return;
@@ -1197,7 +1507,7 @@ $db_articles = array_values($db_articles_temp);
             document.getElementById('itemCount').innerText = `${data.length} bài viết`;
 
             if (data.length === 0) {
-                grid.innerHTML = `<div class="text-muted p-4 text-center w-100">Chưa có bài viết nào trong mục này.</div>`;
+                grid.innerHTML = `<div class="p-4 text-center w-100" style="color: var(--text-muted);">Chưa có bài viết nào trong mục này.</div>`;
                 const pagContainer = document.getElementById('paginationContainer');
                 if (pagContainer) pagContainer.innerHTML = '';
                 renderSidebarTags();
@@ -1274,7 +1584,6 @@ $db_articles = array_values($db_articles_temp);
             updateErrorBadgeCount();
         }
 
-        // Biến nút "..." thành ô nhập số trang ngay tại chỗ
         function activateEllipsisInput(liEl, totalPages, currentPage) {
             if (!liEl) return;
             liEl.innerHTML = `
@@ -1283,9 +1592,7 @@ $db_articles = array_values($db_articles_temp);
                     onblur="submitEllipsisPage(this, ${totalPages}, ${currentPage})">
             `;
             const input = liEl.querySelector('input');
-            if (input) {
-                input.focus();
-            }
+            if (input) input.focus();
         }
 
         function submitEllipsisPage(inputEl, totalPages, currentPage) {
@@ -1323,7 +1630,6 @@ $db_articles = array_values($db_articles_temp);
                 return;
             }
 
-            // Xây dựng danh sách các phần tử trang: [Trước | 1 | 2 | ... | Trang cuối | Sau]
             let tokens = [];
             if (totalPages === 2) {
                 tokens = [1, 2];
@@ -1337,16 +1643,16 @@ $db_articles = array_values($db_articles_temp);
 
             let html = `<nav><ul class="pagination justify-content-center mb-0">`;
             html += `<li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
-                        <button class="page-link text-dark fw-semibold" onclick="renderCards(currentData, ${currentPage - 1})">Trước</button>
+                        <button class="page-link fw-semibold" onclick="renderCards(currentData, ${currentPage - 1})">Trước</button>
                      </li>`;
 
             tokens.forEach(tok => {
                 if (tok === '...') {
                     html += `<li class="page-item">
-                                <button type="button" class="page-link text-dark fw-bold" title="Bấm để nhập số trang muốn đến" onclick="activateEllipsisInput(this.parentElement, ${totalPages}, ${currentPage})">...</button>
+                                <button type="button" class="page-link fw-bold" title="Bấm để nhập số trang muốn đến" onclick="activateEllipsisInput(this.parentElement, ${totalPages}, ${currentPage})">...</button>
                              </li>`;
                 } else {
-                    const activeStyle = currentPage === tok ? 'background-color: #008080; color: white; border-color: #008080;' : 'color: #374151;';
+                    const activeStyle = currentPage === tok ? 'background-color: #008080; color: #ffffff; border-color: #008080;' : '';
                     html += `<li class="page-item ${currentPage === tok ? 'active' : ''}">
                                 <button class="page-link fw-semibold" style="${activeStyle}" onclick="renderCards(currentData, ${tok})">${tok}</button>
                              </li>`;
@@ -1354,7 +1660,7 @@ $db_articles = array_values($db_articles_temp);
             });
 
             html += `<li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
-                        <button class="page-link text-dark fw-semibold" onclick="renderCards(currentData, ${currentPage + 1})">Sau</button>
+                        <button class="page-link fw-semibold" onclick="renderCards(currentData, ${currentPage + 1})">Sau</button>
                      </li>`;
             html += `</ul></nav>`;
             container.innerHTML = html;
@@ -1365,7 +1671,6 @@ $db_articles = array_values($db_articles_temp);
             if (badge) badge.innerText = database.filter(i => i.status === 404).length;
         }
 
-        // Bật/tắt toàn bộ cụm FILTERS & TAGS ở Sidebar
         function toggleSidebarTagsSection() {
             const header = document.getElementById('tagsSectionHeader');
             const wrapper = document.getElementById('sidebarTagsWrapper');
@@ -1376,7 +1681,6 @@ $db_articles = array_values($db_articles_temp);
             header.classList.toggle('collapsed', !isHidden);
         }
 
-        // Mở rộng / thu gọn danh sách nhãn khi có hơn 5 nhãn
         function toggleMoreSidebarTags() {
             showAllSidebarTags = !showAllSidebarTags;
             renderSidebarTags();
@@ -1411,8 +1715,8 @@ $db_articles = array_values($db_articles_temp);
             visibleTags.forEach(tObj => {
                 html += `
                     <div class="side-link justify-content-between" onclick="filterTag('${escapeAttr(tObj.label)}')">
-                        <span class="text-truncate"><i class="fa-solid fa-tag me-2 text-secondary"></i>#${escapeHTML(tObj.label)}</span>
-                        <span class="badge bg-light text-secondary border" style="font-size: 0.7rem;">${tObj.count}</span>
+                        <span class="text-truncate"><i class="fa-solid fa-tag me-2"></i>#${escapeHTML(tObj.label)}</span>
+                        <span class="badge theme-box-subtle" style="font-size: 0.7rem;">${tObj.count}</span>
                     </div>
                 `;
             });
@@ -1441,7 +1745,6 @@ $db_articles = array_values($db_articles_temp);
             document.getElementById('sharePageId').value = id;
             document.getElementById('modalTitle').innerText = item.title;
 
-            // Hiển thị URL trang web nguồn bên trong Modal đọc bài
             const sourceLinkEl = document.getElementById('modalSourceLink');
             if (sourceLinkEl) {
                 sourceLinkEl.href = item.url;
@@ -1513,10 +1816,10 @@ $db_articles = array_values($db_articles_temp);
                 notesDiv.innerHTML = '';
                 if (snap.notes && snap.notes.length > 0) {
                     snap.notes.forEach(note => {
-                        notesDiv.innerHTML += `<div class="p-2 bg-light border rounded mb-2 fs-7 text-dark">${note}</div>`;
+                        notesDiv.innerHTML += `<div class="p-2 theme-box-subtle rounded mb-2 fs-7">${note}</div>`;
                     });
                 } else {
-                    notesDiv.innerHTML = '<div class="text-muted fs-7 italic">Chưa có ghi chú nào.</div>';
+                    notesDiv.innerHTML = '<div class="fs-7 italic" style="color: var(--text-muted);">Chưa có ghi chú nào.</div>';
                 }
             } else {
                 document.getElementById('modalBody').innerHTML = '<p class="text-danger">Không tìm thấy nội dung cho phiên bản này.</p>';
@@ -1627,8 +1930,8 @@ $db_articles = array_values($db_articles_temp);
                             </span>
                         </div>
                         <div>
-                            <h5 class="fw-bold text-dark mb-1" style="font-size: 1.15rem; letter-spacing: -0.2px;">${escapeHTML(lib.name)}</h5>
-                            <p class="text-muted m-0" style="font-size: 0.82rem;">
+                            <h5 class="fw-bold folder-title-text mb-1">${escapeHTML(lib.name)}</h5>
+                            <p class="folder-sub-text m-0">
                                 Khám phá nội dung <i class="fa-solid fa-arrow-right-long ms-1" style="color: #0d9488;"></i>
                             </p>
                         </div>
@@ -1637,7 +1940,6 @@ $db_articles = array_values($db_articles_temp);
                 grid.innerHTML += folderHtml;
             });
 
-            // Thẻ "+ Tạo Library mới" ở cuối lưới thư mục
             grid.innerHTML += `
                 <div class="folder-add-card" onclick="promptCreateLibrary()">
                     <i class="fa-solid fa-folder-plus fs-2"></i>
@@ -1802,7 +2104,6 @@ $db_articles = array_values($db_articles_temp);
             renderCards(database.filter(i => (i.collection_name || 'Chung').toLowerCase() === colName.toLowerCase()));
         }
 
-        // Khởi tạo giao diện Bộ lọc nâng cao (chỉ dựng 1 lần để tránh lag)
         function initAdvancedFilterUI() {
             if (isAdvFilterInitialized) return;
             isAdvFilterInitialized = true;
@@ -1839,7 +2140,7 @@ $db_articles = array_values($db_articles_temp);
                 incContainer.innerHTML = '';
                 Object.keys(groupedTags).sort().forEach(letter => {
                     let groupHtml = `<div class="tag-letter-group mb-3">
-                        <div class="fw-bold text-danger small mb-2 border-bottom border-secondary pb-1">${letter}</div>
+                        <div class="fw-bold text-danger small mb-2 border-bottom adv-filter-divider pb-1">${letter}</div>
                         <div class="row g-2">`;
                     
                     groupedTags[letter].forEach((tag, idx) => {
@@ -1848,7 +2149,7 @@ $db_articles = array_values($db_articles_temp);
                             <div class="col-6 col-md-3 tag-check-item" data-tag-name="${escapeHTML(tag.toLowerCase())}">
                                 <div class="form-check">
                                     <input class="form-check-input adv-inc-tag" type="checkbox" value="${escapeHTML(tag)}" id="${safeId}">
-                                    <label class="form-check-label small text-light" style="cursor:pointer;" for="${safeId}">${escapeHTML(tag)}</label>
+                                    <label class="form-check-label small adv-tag-label" for="${safeId}">${escapeHTML(tag)}</label>
                                 </div>
                             </div>`;
                     });
@@ -1865,7 +2166,7 @@ $db_articles = array_values($db_articles_temp);
                     excContainer.innerHTML += `
                         <div class="form-check">
                             <input class="form-check-input adv-exc-tag" type="checkbox" value="${escapeHTML(tag)}" id="${safeId}">
-                            <label class="form-check-label small text-light" style="cursor:pointer;" for="${safeId}">${escapeHTML(tag)}</label>
+                            <label class="form-check-label small adv-tag-label" for="${safeId}">${escapeHTML(tag)}</label>
                         </div>`;
                 });
             }

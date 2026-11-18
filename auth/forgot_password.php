@@ -1,9 +1,9 @@
 <?php
-// forgot_password.php - Khôi phục mật khẩu qua Tên đăng nhập & Email đã đăng ký
-require_once 'config/db.php';
+// auth/forgot_password.php - Khôi phục mật khẩu qua Tên đăng nhập & Email đã đăng ký
+require_once '../config/db.php';
 
 if (isset($_SESSION['user_id'])) {
-    header("Location: index.php");
+    header("Location: ../index.php");
     exit();
 }
 

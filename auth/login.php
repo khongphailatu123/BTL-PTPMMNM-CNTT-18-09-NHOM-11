@@ -1,9 +1,9 @@
 <?php
-// login.php - Đăng nhập hệ thống Pocket Saver (Hỗ trợ tài khoản thường & Google Account)
-require_once 'config/db.php';
+// auth/login.php - Đăng nhập hệ thống Pocket Saver (Hỗ trợ tài khoản thường & Google Account)
+require_once '../config/db.php';
 
 if (isset($_SESSION['user_id'])) {
-    header("Location: index.php");
+    header("Location: ../index.php");
     exit();
 }
 
@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['username'] = $user['username'];
                 $_SESSION['role'] = $user['role'] ?? 'user';
 
-                header("Location: index.php");
+                header("Location: ../index.php");
                 exit();
             } else {
                 $error = 'Mật khẩu không chính xác!';
