@@ -1,0 +1,12 @@
+thêm phần chia sẻ, thêm phần quản lý...
+cách trình bày:
+
+TK:
+admin
+123456
+
+quanlun1
+123456
+
+sktquan11
+Helloae123
